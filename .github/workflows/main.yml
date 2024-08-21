@@ -1,0 +1,53 @@
+name: Deploy to IIS using WinRM
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v2
+        with:
+          node-version: '14'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build project
+        run: npm run build --prod
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v2
+        with:
+          name: dist
+          path: dist/
+
+  deploy:
+    runs-on: windows-latest
+    needs: build
+
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v2
+        with:
+          name: dist
+
+      - name: Copy files to IIS server using WinRM
+        run: |
+          $password = ConvertTo-SecureString $env:IIS_SERVER_PASSWORD -AsPlainText -Force
+          $credential = New-Object System.Management.Automation.PSCredential ($env:IIS_SERVER_USERNAME, $password)
+          $session = New-PSSession -ComputerName $env:IIS_SERVER_HOST -Credential $credential -Port 5985
+          Copy-Item -Path ./dist/* -Destination C:\inetpub\wwwroot\cicd -Recurse -Force -ToSession $session
+          Remove-PSSession -Session $session
+        env:
+          IIS_SERVER_HOST: ${{ secrets.IIS_SERVER_HOST }}
+          IIS_SERVER_USERNAME: ${{ secrets.IIS_SERVER_USERNAME }}
+          IIS_SERVER_PASSWORD: ${{ secrets.IIS_SERVER_PASSWORD }}
